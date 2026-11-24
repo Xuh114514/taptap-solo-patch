@@ -267,3 +267,36 @@ netsh interface portproxy show v4tov4                                       # �
 - 启动器：[inori-dream/miaomiao-launcher](https://github.com/inori-dream/miaomiao-launcher)
 - 服务端：[BanterSR/Lolo](https://github.com/BanterSR/Lolo)、[byzp/of-ps](https://github.com/byzp/of-ps)
 - 本补丁只补了「渠道版本地登录」这一环，其余功能以上游项目为准
+
+---
+
+## 9. 安卓版怎么办
+
+安卓版《开放空间》也能连本地服务端，因为 Lolo 的协议里有 `AccountType_Android = 28814`，服务端本来就是支持安卓客户端的。
+
+但要额外解决两道坎：
+
+1. **网络重定向**：让安卓客户端把 `dsp-prod-of.inutan.com:18881` 打到你的 PC
+2. **登录伪造**：hook TapSDK 的登录回调，让游戏拿到假 token
+
+完整调研（三条路线对比、每个路线怎么落地、同类游戏案例）见 [android/安卓方案.md](android/安卓方案.md)。
+
+配套工具：
+
+| 文件 | 用途 |
+| --- | --- |
+| `android/lan-server.ps1` | 把 PC 的 Lolo 切到"局域网可连"模式（监听 0.0.0.0:18881、放行防火墙、打印要填的 IP） |
+| `android/frida/probe.js` | 安卓端侦察脚本：找 TapSDK 类、OkHttp 请求、内存里的 dispatch 域名 |
+| `android/frida/redirect.js` | 安卓端重定向脚本：把 dispatch 请求改到 PC 的 IP |
+
+用法：
+
+```powershell
+# PC 侧：切成安卓可连模式
+powershell -ExecutionPolicy Bypass -File android\lan-server.ps1 -Action on
+
+# 想还原
+powershell -ExecutionPolicy Bypass -File android\lan-server.ps1 -Action off
+```
+
+> 安卓包必须先拿到手才能写死 hook 点，把 APK 给我就能继续往下做。
