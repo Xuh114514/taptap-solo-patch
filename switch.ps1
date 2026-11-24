@@ -1,10 +1,10 @@
 ﻿# 一键切换：单机 <-> 官服
-# 用法：
-#   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode official   # 回官服
-#   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode solo       # 回单机
+# 双击运行进入菜单；也可以带参数直接切换：
+#   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode official
+#   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode solo
 
 param(
-    [ValidateSet('solo','official')][string]$Mode = 'solo',
+    [ValidateSet('solo','official','')][string]$Mode = '',
     [string]$LauncherRoot = ''
 )
 
@@ -27,6 +27,36 @@ function Test-Launcher([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return $false }
     return (Test-Path (Join-Path $p 'OverFieldLauncher.exe'))
 }
+function Get-CurrentMode {
+    $text = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
+    if ($text -match [regex]::Escape($DispatchHost)) { return 'solo' }
+    return 'official'
+}
+
+# ---------- 菜单 ----------
+if (-not $Mode) {
+    $current = Get-CurrentMode
+    Write-Host ''
+    Write-Host '============================================' -ForegroundColor Cyan
+    Write-Host '   开放空间 · 单机 / 官服 一键切换' -ForegroundColor Cyan
+    Write-Host '============================================' -ForegroundColor Cyan
+    if ($current -eq 'solo') {
+        Write-Host '   当前状态：单机模式（走本机服务端）' -ForegroundColor Yellow
+    } else {
+        Write-Host '   当前状态：官服模式（走官方服务器）' -ForegroundColor Yellow
+    }
+    Write-Host ''
+    Write-Host '   1  切到【单机模式】'
+    Write-Host '   2  切回【官服模式】'
+    Write-Host '   0  退出'
+    Write-Host ''
+    $sel = Read-Host '请输入 1 / 2 / 0'
+    switch ($sel.Trim()) {
+        '1' { $Mode = 'solo' }
+        '2' { $Mode = 'official' }
+        default { Write-Host '已退出。' -ForegroundColor Gray; Start-Sleep -Milliseconds 600; exit }
+    }
+}
 
 # 定位启动器（只有切到单机时才需要）
 $found = $null
@@ -41,9 +71,9 @@ if ($Mode -eq 'solo' -and -not $found) {
 
 if (-not (Test-Admin)) {
     Warn '需要管理员权限，正在申请提权…（UAC 点「是」）'
-    $args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$PSCommandPath`"",'-Mode',$Mode)
-    if ($found) { $args += @('-LauncherRoot', "`"$found`"") }
-    Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -ArgumentList $args
+    $argList = @('-NoProfile','-ExecutionPolicy','Bypass','-File',"`"$PSCommandPath`"",'-Mode',$Mode)
+    if ($found) { $argList += @('-LauncherRoot', "`"$found`"") }
+    Start-Process -FilePath 'powershell.exe' -Verb RunAs -Wait -ArgumentList $argList
     exit
 }
 
@@ -71,8 +101,14 @@ if ($Mode -eq 'official') {
         [SwWinInet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
         Ok '代理旁路已清理'
     }
+
     Write-Host ''
-    Write-Host '  现在直接用 TapTap / 官方启动器启动，就是官服。' -ForegroundColor Green
+    Write-Host '  已切回官服。' -ForegroundColor Green
+    Write-Host '  现在直接点 TapTap / 官方启动器启动即可。' -ForegroundColor Gray
+    if (Get-Process -Name 'Lolo' -ErrorAction SilentlyContinue) {
+        Write-Host '  提示：本地 Lolo.exe 还在跑，可在启动器点「停止」或在任务管理器结束它。' -ForegroundColor Yellow
+    }
+    Write-Host ''
     Read-Host '按回车关闭'
     exit
 }
@@ -91,9 +127,11 @@ if (Test-Path $sdkDir) {
     if (Test-Path $StubExe) {
         Copy-Item -LiteralPath $StubExe -Destination $stubDst -Force
         Ok '替身 PCSDKUI 已就位'
+    } else {
+        Warn "缺少 $StubExe，替身没装"
     }
 } else {
-    Warn "还没生成客户端副本：先打开启动器点一次「启动单机游戏」再回来。"
+    Warn '还没生成客户端副本：先打开启动器点一次「启动单机游戏」再回来。'
 }
 
 $text = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
@@ -120,5 +158,7 @@ if ($cur) {
 }
 
 Write-Host ''
-Write-Host '  现在打开启动器 → 单机模式 → 启动单机游戏。' -ForegroundColor Green
+Write-Host '  已切到单机。' -ForegroundColor Green
+Write-Host '  现在打开启动器 → 单机模式 → 启动单机游戏（渠道登录弹窗直接关）。' -ForegroundColor Gray
+Write-Host ''
 Read-Host '按回车关闭'
