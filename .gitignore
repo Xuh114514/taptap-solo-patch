@@ -11,3 +11,6 @@ server-kit/
 Thumbs.db
 desktop.ini
 .DS_Store
+launcher.path
+hosts.backup
+

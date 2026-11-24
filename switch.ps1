@@ -9,11 +9,12 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$HookDir   = $PSScriptRoot
-$StubExe   = Join-Path $HookDir 'tools\PCSDKUIStub.exe'
-$HostsFile = Join-Path $env:WINDIR 'System32\drivers\etc\hosts'
-$HostsBak  = Join-Path $HookDir 'hosts.backup'
-$RegPath   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+$HookDir      = $PSScriptRoot
+$StubExe      = Join-Path $HookDir 'tools\PCSDKUIStub.exe'
+$PathFile     = Join-Path $HookDir 'launcher.path'
+$HostsFile    = Join-Path $env:WINDIR 'System32\drivers\etc\hosts'
+$HostsBak     = Join-Path $HookDir 'hosts.backup'
+$RegPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
 $DispatchHost = 'dsp-prod-of.inutan.com'
 
 function Ok($t)   { Write-Host "[OK]   $t" -ForegroundColor Green }
@@ -27,6 +28,36 @@ function Test-Launcher([string]$p) {
     if ([string]::IsNullOrWhiteSpace($p)) { return $false }
     return (Test-Path (Join-Path $p 'OverFieldLauncher.exe'))
 }
+
+# 允许直接拖 OverFieldLauncher.exe，或拖启动器文件夹
+function Normalize-LauncherPath([string]$p) {
+    if ([string]::IsNullOrWhiteSpace($p)) { return '' }
+    $p = $p.Trim().Trim('"').Trim("'").Trim()
+    if ($p -match '\.exe$') { $p = Split-Path $p -Parent }
+    if (Test-Path $p) { return (Resolve-Path $p).Path }
+    return ''
+}
+
+function Find-Launcher {
+    $cands = @()
+    if ($LauncherRoot) { $cands += $LauncherRoot }
+    if (Test-Path $PathFile) {
+        $saved = Get-Content -LiteralPath $PathFile -Raw -ErrorAction SilentlyContinue
+        if ($saved) { $cands += $saved }
+    }
+    $cands += $HookDir
+    $cands += (Split-Path $HookDir -Parent)
+    foreach ($c in $cands) {
+        $n = Normalize-LauncherPath $c
+        if ($n -and (Test-Launcher $n)) { return $n }
+    }
+    return $null
+}
+
+function Save-LauncherPath([string]$p) {
+    try { [IO.File]::WriteAllText($PathFile, $p, (New-Object Text.UTF8Encoding($false))) } catch { }
+}
+
 function Get-CurrentMode {
     $text = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
     if ($text -match [regex]::Escape($DispatchHost)) { return 'solo' }
@@ -36,6 +67,7 @@ function Get-CurrentMode {
 # ---------- 菜单 ----------
 if (-not $Mode) {
     $current = Get-CurrentMode
+    $known = Find-Launcher
     Write-Host ''
     Write-Host '============================================' -ForegroundColor Cyan
     Write-Host '   开放空间 · 单机 / 官服 一键切换' -ForegroundColor Cyan
@@ -44,6 +76,11 @@ if (-not $Mode) {
         Write-Host '   当前状态：单机模式（走本机服务端）' -ForegroundColor Yellow
     } else {
         Write-Host '   当前状态：官服模式（走官方服务器）' -ForegroundColor Yellow
+    }
+    if ($known) {
+        Write-Host "   启动器目录：$known" -ForegroundColor DarkGray
+    } else {
+        Write-Host '   启动器目录：未记录（选 1 时会问你一次，之后记住）' -ForegroundColor DarkGray
     }
     Write-Host ''
     Write-Host '   1  切到【单机模式】'
@@ -54,19 +91,24 @@ if (-not $Mode) {
     switch ($sel.Trim()) {
         '1' { $Mode = 'solo' }
         '2' { $Mode = 'official' }
-        default { Write-Host '已退出。' -ForegroundColor Gray; Start-Sleep -Milliseconds 600; exit }
+        default { Write-Host '已退出。' -ForegroundColor Gray; Start-Sleep -Milliseconds 500; exit }
     }
 }
 
-# 定位启动器（只有切到单机时才需要）
+# 只有切单机才必须知道启动器目录
 $found = $null
-foreach ($c in @($LauncherRoot, $HookDir, (Split-Path $HookDir -Parent))) {
-    if (Test-Launcher $c) { $found = (Resolve-Path $c).Path; break }
-}
-if ($Mode -eq 'solo' -and -not $found) {
-    Warn '没找到启动器目录，请把启动器文件夹拖进来后回车：'
-    $in = (Read-Host '  目录').Trim('"').Trim("'").Trim()
-    if (Test-Launcher $in) { $found = (Resolve-Path $in).Path }
+if ($Mode -eq 'solo') {
+    $found = Find-Launcher
+    while (-not $found) {
+        Warn '请把「OverFieldLauncher.exe 所在的文件夹」拖进来后回车'
+        Write-Host '     （这个文件夹里应该有 OverFieldLauncher.exe，不是游戏客户端目录 176228）' -ForegroundColor DarkGray
+        Write-Host '     （直接拖 OverFieldLauncher.exe 这个文件也可以）' -ForegroundColor DarkGray
+        $in = Read-Host '  路径'
+        $found = Normalize-LauncherPath $in
+        if (-not $found) { Warn '这个路径里没有 OverFieldLauncher.exe，再试一次。' }
+    }
+    Save-LauncherPath $found
+    Ok "启动器目录：$found（已记录，下次不用再填）"
 }
 
 if (-not (Test-Admin)) {
@@ -114,7 +156,9 @@ if ($Mode -eq 'official') {
 }
 
 # ---------- 回单机 ----------
+if (-not $found) { $found = Find-Launcher }
 if (-not $found) { Warn '没有启动器目录，无法继续。'; Read-Host '按回车退出'; exit 1 }
+Save-LauncherPath $found
 
 $sdkDir  = Join-Path $found 'profiles\solo\client\launcher_Data\Plugins\Win\PCSDK_release'
 $stubDst = Join-Path $sdkDir 'PCSDKUI.exe'
