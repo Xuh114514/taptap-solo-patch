@@ -195,11 +195,20 @@ if (Test-Path $sdkDir) {
 }
 
 $text = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
-if (-not ($text -match [regex]::Escape($DispatchHost))) {
+if (-not ($text -match '^\s*127\.0\.0\.1\s+dsp-prod-of\.inutan\.com')) {
     if (-not (Test-Path $HostsBak)) { Copy-Item -LiteralPath $HostsFile -Destination $HostsBak -Force }
-    Add-Content -LiteralPath $HostsFile -Value "`r`n# taptap-solo-patch"
-    Add-Content -LiteralPath $HostsFile -Value "127.0.0.1 $DispatchHost"
-    Ok 'hosts 已劫持 dispatch 域名'
+    # 全量重写（Add-Content 在部分系统上会被拦，只写进注释写不进 IP）
+    $kept = @($text | Where-Object { $_ -notmatch 'dsp-prod-of\.inutan\.com' -and $_ -notmatch 'taptap-solo-patch' })
+    $newLines = $kept + @('', '# taptap-solo-patch', "127.0.0.1 $DispatchHost")
+    [IO.File]::WriteAllLines($HostsFile, [string[]]$newLines, (New-Object Text.UTF8Encoding($false)))
+    Start-Sleep -Milliseconds 250
+    $verify = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
+    if ($verify -match '^\s*127\.0\.0\.1\s+dsp-prod-of\.inutan\.com') {
+        Ok 'hosts 已劫持 dispatch 域名'
+    } else {
+        Warn 'hosts 写入失败（可能被杀毒/安全软件拦住）。手动以管理员身份在 hosts 加一行：'
+        Warn "    127.0.0.1 $DispatchHost"
+    }
 } else {
     Ok 'hosts 已是劫持状态'
 }
@@ -208,6 +217,14 @@ if (-not ($text -match [regex]::Escape($DispatchHost))) {
 & netsh interface portproxy add v4tov4 listenaddress=127.0.0.1 listenport=18881 connectaddress=127.0.0.1 connectport=18080
 Ok '端口转发 18881 -> 18080 已就绪'
 & ipconfig /flushdns | Out-Null
+
+$res = @()
+try { $res = [System.Net.Dns]::GetHostAddresses($DispatchHost) | ForEach-Object { $_.IPAddressToString } } catch { }
+if ($res -contains '127.0.0.1') {
+    Ok '解析检查：dispatch 已指向本机 127.0.0.1'
+} else {
+    Warn ('解析检查失败：现在解析到 ' + ($res -join ', ') + '，hosts 没生效，游戏会报「服务器获取失败」')
+}
 
 if (Test-SystemProxy) {
     $cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride

@@ -113,12 +113,21 @@ if (-not $admin) {
 }
 
 $hostsText = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
-$hasHosts = [bool]($hostsText -match [regex]::Escape($DispatchHost))
+$hasHosts = [bool]($hostsText -match '^\s*127\.0\.0\.1\s+dsp-prod-of\.inutan\.com')
 if (-not $hasHosts) {
     if (-not (Test-Path $HostsBak)) { Copy-Item -LiteralPath $HostsFile -Destination $HostsBak -Force }
-    Add-Content -LiteralPath $HostsFile -Value "`r`n# taptap-solo-patch (remove this line to restore)"
-    Add-Content -LiteralPath $HostsFile -Value "127.0.0.1 $DispatchHost"
-    Ok "hosts 已加入 127.0.0.1 $DispatchHost"
+    # 全量重写（比 Add-Content 可靠：有些系统/安全软件会拦住追加写入）
+    $kept = @($hostsText | Where-Object { $_ -notmatch 'dsp-prod-of\.inutan\.com' -and $_ -notmatch 'taptap-solo-patch' })
+    $newLines = $kept + @('', '# taptap-solo-patch (remove this line to restore)', "127.0.0.1 $DispatchHost")
+    [IO.File]::WriteAllLines($HostsFile, [string[]]$newLines, (New-Object Text.UTF8Encoding($false)))
+    Start-Sleep -Milliseconds 250
+    $verify = Get-Content -LiteralPath $HostsFile -ErrorAction SilentlyContinue
+    if ($verify -match '^\s*127\.0\.0\.1\s+dsp-prod-of\.inutan\.com') {
+        Ok "hosts 已加入 127.0.0.1 $DispatchHost"
+    } else {
+        Warn 'hosts 写入失败（可能被杀毒/安全软件拦住）。请手动用记事本以管理员身份在 hosts 里加一行：'
+        Warn "    127.0.0.1 $DispatchHost"
+    }
 } else {
     Ok 'hosts 已经有对应记录'
 }
