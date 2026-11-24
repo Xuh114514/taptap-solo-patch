@@ -1,0 +1,13 @@
+# 本地运行产物
+hosts.backup
+*.log
+*stub.log
+profiles/
+runtime/
+server-kit/
+*.zip
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
