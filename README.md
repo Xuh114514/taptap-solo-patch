@@ -141,6 +141,28 @@
 
 ## 4. 想回官服怎么办
 
+**注意：装完补丁后，直接点 TapTap 启动器是回不去官服的。**
+
+因为 hosts 那一行和 18881 端口转发还在，官方客户端拿到登录 token 后请求
+`http://dsp-prod-of.inutan.com:18881/dispatch/...` 会被导到本机，
+结果要么连到本地服务，要么报「服务器获取失败」。
+
+正确的切换方式，二选一：
+
+### 方式 A：一键切换（推荐）
+
+```powershell
+# 回官服
+powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode official
+
+# 再回单机
+powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode solo
+```
+
+右键 `switch.ps1` 直接跑也可以，默认按单机处理；要回官服就在命令行带 `-Mode official`。
+
+### 方式 B：完整卸载
+
 右键运行 `uninstall.ps1`（要管理员），它会：
 
 - 从备份还原 `hosts`
@@ -148,7 +170,17 @@
 - 把 `PCSDKUI.orig.exe` 还原成 `PCSDKUI.exe`
 - 清掉代理旁路里加的条目
 
-**然后你的客户端和装补丁前完全一样。**
+**两种方式做完后，你的客户端和装补丁前完全一样，TapTap 启动器直接进官服。**
+
+想确认切干净了，跑这三条：
+
+```powershell
+Get-Content C:\Windows\System32\drivers\etc\hosts | Select-String inutan   # 应该没有输出
+netsh interface portproxy show v4tov4                                       # 应该看不到 18881
+[System.Net.Dns]::GetHostAddresses('dsp-prod-of.inutan.com')                # 应该不是 127.0.0.1
+```
+
+> 切回官服前，建议先在启动器里点一次「停止」，把本地 `Lolo.exe` 关掉（任务管理器里结束也行）。
 
 ---
 
@@ -195,6 +227,7 @@
 
 | 文件 | 用途 |
 | --- | --- |
+| `switch.ps1` | 单机 / 官服一键来回切 |
 | `install.ps1` | 安装 / 修复补丁（自动申请管理员） |
 | `uninstall.ps1` | 完整还原 |
 | `tools/PCSDKUIStub.exe` | 替身程序（预编译，直接可用） |
