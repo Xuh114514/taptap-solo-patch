@@ -1,4 +1,4 @@
-# 完整还原：恢复 hosts、删除端口转发、还原 PCSDKUI.exe、清理代理旁路
+﻿# 完整还原：恢复 hosts、删除端口转发、还原 PCSDKUI.exe、清理代理旁路
 # 用法：右键本文件 -> 使用 PowerShell 运行；或 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 param([string]$LauncherRoot = '')

@@ -1,4 +1,4 @@
-# 安装 TapTap / 渠道版「本地单机启动」补丁
+﻿# 安装 TapTap / 渠道版「本地单机启动」补丁
 # 用法：右键本文件 -> 使用 PowerShell 运行；或 powershell -ExecutionPolicy Bypass -File install.ps1
 
 param([string]$LauncherRoot = '')

@@ -1,4 +1,4 @@
-# 一键切换：单机 <-> 官服
+﻿# 一键切换：单机 <-> 官服
 # 双击运行进入菜单；也可以带参数直接切换：
 #   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode official
 #   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode solo
