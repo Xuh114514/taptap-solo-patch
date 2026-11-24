@@ -1,4 +1,4 @@
-﻿# 安装 TapTap / 渠道版「本地单机启动」补丁
+# 安装 TapTap / 渠道版「本地单机启动」补丁
 # 用法：右键本文件 -> 使用 PowerShell 运行；或 powershell -ExecutionPolicy Bypass -File install.ps1
 
 param([string]$LauncherRoot = '')
@@ -9,6 +9,7 @@ $StubExe   = Join-Path $HookDir 'tools\PCSDKUIStub.exe'
 $HostsFile = Join-Path $env:WINDIR 'System32\drivers\etc\hosts'
 $HostsBak  = Join-Path $HookDir 'hosts.backup'
 $RegPath   = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+$ProxyOverrideBak = Join-Path $HookDir 'proxy-override.backup'
 $DispatchHost = 'dsp-prod-of.inutan.com'
 
 function Say($text)  { Write-Host "  $text" -ForegroundColor Gray }
@@ -129,27 +130,44 @@ else { Warn '端口转发设置失败，请确认是以管理员身份运行' }
 
 & ipconfig /flushdns | Out-Null
 
-# ---------- 5. 代理旁路 ----------
+# ---------- 5. 代理旁路（只有真的装了系统代理才需要） ----------
 Step '第 5 步：代理旁路'
 
-$current = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
-if ($current) {
-    $parts = $current -split ';' | Where-Object { $_ -ne '' -and $_ -ne '<local>' }
-    foreach ($item in @('*.inutan.com','14.103.*')) {
-        if ($parts -notcontains $item) { $parts += $item }
-    }
-    $newValue = ($parts -join ';') + ';<local>'
-    if ($newValue -ne $current) {
-        Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value $newValue -Type String
-        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TspWinInet { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
-        [TspWinInet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
-        [TspWinInet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
-        Ok '已把 dispatch 域名加入「不使用代理」列表'
-    } else {
-        Ok '代理旁路已存在'
-    }
+$proxyState = Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue
+$proxyOn = ($proxyState.ProxyEnable -eq 1) -and ($proxyState.ProxyServer -or $proxyState.AutoConfigURL)
+
+if (-not $proxyOn) {
+    Ok '没有检测到系统代理（ProxyEnable 不是 1），这一步自动跳过'
+    Say '直连网络不会劫持 dispatch 请求，不需要这项设置。'
 } else {
-    Warn '没有读取到系统代理设置，跳过（不影响使用）'
+    $current = $proxyState.ProxyOverride
+    if ($current) {
+        if (-not (Test-Path $ProxyOverrideBak)) {
+            [IO.File]::WriteAllText($ProxyOverrideBak, $current, (New-Object Text.UTF8Encoding($false)))
+        }
+        $parts = $current -split ';' | Where-Object { $_ -ne '' -and $_ -ne '<local>' }
+        foreach ($item in @('*.inutan.com','14.103.*')) {
+            if ($parts -notcontains $item) { $parts += $item }
+        }
+        $newValue = ($parts -join ';') + ';<local>'
+        if ($newValue -ne $current) {
+            Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value $newValue -Type String
+            Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TspWinInet { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
+            [TspWinInet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
+            [TspWinInet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
+            Ok "检测到系统代理（$($proxyState.ProxyServer)），已把 dispatch 域名加入「不使用代理」列表"
+            if ($proxyState.ProxyServer -match '^[^:]+:(\d+)$') {
+                $pp = [int]$Matches[1]
+                if (-not (Get-NetTCPConnection -LocalPort $pp -State Listen -ErrorAction SilentlyContinue)) {
+                    Warn "不过 $($proxyState.ProxyServer) 现在没有在监听（代理软件没开？）。dispatch 已经走旁路，不受影响；但你最好把代理软件关掉或打开，否则其它网页会打不开。"
+                }
+            }
+        } else {
+            Ok '代理旁路已存在'
+        }
+    } else {
+        Warn '有代理但没有 ProxyOverride 列表，跳过（一般不影响）'
+    }
 }
 
 # ---------- 完成 ----------

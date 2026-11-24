@@ -1,4 +1,4 @@
-﻿# 完整还原：恢复 hosts、删除端口转发、还原 PCSDKUI.exe、清理代理旁路
+# 完整还原：恢复 hosts、删除端口转发、还原 PCSDKUI.exe、清理代理旁路
 # 用法：右键本文件 -> 使用 PowerShell 运行；或 powershell -ExecutionPolicy Bypass -File uninstall.ps1
 
 param([string]$LauncherRoot = '')
@@ -87,14 +87,24 @@ if ($LauncherRoot) {
 }
 
 # 代理旁路
-$cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
-if ($cur) {
-    $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -notin @('*.inutan.com','14.103.*') }
-    Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value ($parts -join ';') -Type String
+$proxyBak = Join-Path $HookDir 'proxy-override.backup'
+if (Test-Path $proxyBak) {
+    $origin = [IO.File]::ReadAllText($proxyBak, [Text.Encoding]::UTF8)
+    Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value $origin -Type String
     Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TspWinInet2 { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
     [TspWinInet2]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
     [TspWinInet2]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
-    Ok '代理旁路已清理'
+    Ok '代理设置已从备份还原'
+} else {
+    $cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
+    if ($cur) {
+        $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -notin @('*.inutan.com','14.103.*') }
+        Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value ($parts -join ';') -Type String
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class TspWinInet2 { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
+        [TspWinInet2]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
+        [TspWinInet2]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
+        Ok '代理旁路条目已清理'
+    }
 }
 
 Step '完成'

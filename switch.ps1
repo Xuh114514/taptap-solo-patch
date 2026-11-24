@@ -1,4 +1,4 @@
-﻿# 一键切换：单机 <-> 官服
+# 一键切换：单机 <-> 官服
 # 双击运行进入菜单；也可以带参数直接切换：
 #   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode official
 #   powershell -ExecutionPolicy Bypass -File switch.ps1 -Mode solo
@@ -15,7 +15,14 @@ $PathFile     = Join-Path $HookDir 'launcher.path'
 $HostsFile    = Join-Path $env:WINDIR 'System32\drivers\etc\hosts'
 $HostsBak     = Join-Path $HookDir 'hosts.backup'
 $RegPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+$ProxyOverrideBak = Join-Path $HookDir 'proxy-override.backup'
 $DispatchHost = 'dsp-prod-of.inutan.com'
+
+function Test-SystemProxy {
+    $st = Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue
+    if ($null -eq $st) { return $false }
+    return (($st.ProxyEnable -eq 1) -and ($st.ProxyServer -or $st.AutoConfigURL))
+}
 
 function Ok($t)   { Write-Host "[OK]   $t" -ForegroundColor Green }
 function Warn($t) { Write-Host "[注意] $t" -ForegroundColor Yellow }
@@ -134,14 +141,23 @@ if ($Mode -eq 'official') {
     Ok '端口转发 18881 已删除'
     & ipconfig /flushdns | Out-Null
 
-    $cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
-    if ($cur) {
-        $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -notin @('*.inutan.com','14.103.*') }
-        Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value ($parts -join ';') -Type String
+    if (Test-Path $ProxyOverrideBak) {
+        $origin = [IO.File]::ReadAllText($ProxyOverrideBak, [Text.Encoding]::UTF8)
+        Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value $origin -Type String
         Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class SwWinInet { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
         [SwWinInet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
         [SwWinInet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
-        Ok '代理旁路已清理'
+        Ok '代理设置已从备份还原'
+    } else {
+        $cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
+        if ($cur) {
+            $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -notin @('*.inutan.com','14.103.*') }
+            Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value ($parts -join ';') -Type String
+            Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class SwWinInet { [DllImport("wininet.dll")] public static extern bool InternetSetOption(IntPtr h,int o,IntPtr b,int n); }' -ErrorAction SilentlyContinue
+            [SwWinInet]::InternetSetOption([IntPtr]::Zero,39,[IntPtr]::Zero,0) | Out-Null
+            [SwWinInet]::InternetSetOption([IntPtr]::Zero,37,[IntPtr]::Zero,0) | Out-Null
+            Ok '代理旁路条目已清理'
+        }
     }
 
     Write-Host ''
@@ -193,12 +209,26 @@ if (-not ($text -match [regex]::Escape($DispatchHost))) {
 Ok '端口转发 18881 -> 18080 已就绪'
 & ipconfig /flushdns | Out-Null
 
-$cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
-if ($cur) {
-    $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -ne '<local>' }
-    foreach ($item in @('*.inutan.com','14.103.*')) { if ($parts -notcontains $item) { $parts += $item } }
-    Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value (($parts -join ';') + ';<local>') -Type String
-    Ok '代理旁路已就绪'
+if (Test-SystemProxy) {
+    $cur = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyOverride
+    if ($cur) {
+        if (-not (Test-Path $ProxyOverrideBak)) {
+            [IO.File]::WriteAllText($ProxyOverrideBak, $cur, (New-Object Text.UTF8Encoding($false)))
+        }
+        $parts = $cur -split ';' | Where-Object { $_ -ne '' -and $_ -ne '<local>' }
+        foreach ($item in @('*.inutan.com','14.103.*')) { if ($parts -notcontains $item) { $parts += $item } }
+        Set-ItemProperty -Path $RegPath -Name ProxyOverride -Value (($parts -join ';') + ';<local>') -Type String
+        Ok '代理旁路已就绪（检测到你开着系统代理）'
+        $ps = (Get-ItemProperty -Path $RegPath -ErrorAction SilentlyContinue).ProxyServer
+        if ($ps -match '^[^:]+:(\d+)$') {
+            $pp = [int]$Matches[1]
+            if (-not (Get-NetTCPConnection -LocalPort $pp -State Listen -ErrorAction SilentlyContinue)) {
+                Warn "系统代理 $ps 现在没有在监听（代理软件没开？）。dispatch 已走旁路不受影响，但你最好把代理软件关掉或打开。"
+            }
+        }
+    }
+} else {
+    Ok '没有系统代理，代理旁路自动跳过（不需要）'
 }
 
 Write-Host ''

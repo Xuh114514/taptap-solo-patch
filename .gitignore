@@ -1,4 +1,4 @@
-# 本地运行产物
+# 鏈湴杩愯浜х墿
 hosts.backup
 *.log
 *stub.log
@@ -7,10 +7,11 @@ runtime/
 server-kit/
 *.zip
 
-# 系统
+# 绯荤粺
 Thumbs.db
 desktop.ini
 .DS_Store
 launcher.path
 hosts.backup
 
+proxy-override.backup

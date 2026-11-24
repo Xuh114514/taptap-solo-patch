@@ -101,7 +101,7 @@
 1. 备份并替换 `PCSDKUI.exe` 为替身（原文件存成 `PCSDKUI.orig.exe`）
 2. 往 hosts 加一行 `127.0.0.1 dsp-prod-of.inutan.com`
 3. 加端口转发 `127.0.0.1:18881 -> 127.0.0.1:18080`
-4. 在你系统代理的「不使用代理」列表里加 `*.inutan.com`（防止 Clash/V2Ray 把请求变成 502）
+4. （**只有你装了系统代理才会做这一步**）在你系统代理的「不使用代理」列表里加 `*.inutan.com`，防止 Clash/V2Ray 把请求变成 502
 
 ### 第 4 步：重新打开启动器，点「启动单机游戏」
 
@@ -132,7 +132,7 @@
 | 现象 | 原因 | 怎么办 |
 | --- | --- | --- |
 | 点启动就报 `Profile port 18080 is occupied by another service` | 上次的 `Lolo.exe` 没退干净 | 任务管理器结束所有 `Lolo.exe`，再启动 |
-| 游戏里提示「服务器获取失败」 | dispatch 请求走了你的代理（Clash 之类） | 重新跑一次 `install.ps1`（第 4 项会自动补代理旁路） |
+| 游戏里提示「服务器获取失败」 | dispatch 请求走了你的代理（Clash 之类） | 重新跑一次 `install.ps1`（会检测代理并自动补旁路；没有代理的人不会遇到） |
 | 游戏里提示「SDK 登录校验失败」 | 还在连官方 18881 | 检查 hosts 有没有那一行；检查 `netsh interface portproxy show v4tov4` 里有没有 18881 |
 | 启动后直接闪退 / 回官网登录弹窗 | 替身没生效 | 看 `PCSDK_release\PCSDKUI.exe` 是不是 8KB 左右（原版是 170KB） |
 | 装完还是弹官网网页 | 客户端副本没重建 | 删掉 `profiles\solo\client` 整个目录，回第 1 步重来，再跑一次 `install.ps1` |
